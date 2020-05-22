@@ -11,6 +11,10 @@ POP = 0b01000110
 ADD = 0b10100000
 CALL = 0b01010000
 RET = 0b00010001
+CMP = 0b10100111
+JMP = 0b1010100
+JEQ = 0b1010101
+JNE = 0b1010110
 # Assign stack pointer to index 7 of register
 SP = 7
 
@@ -23,8 +27,10 @@ class CPU:
         self.ram = [0] * 256
         self.reg = [0] * 8  # stack pointer at R7
         self.PC = 0
-        # set initial value of where stack point is pointing (f4 if it's empty)
+        # set initial value of where stack point is pointing
         self.reg[SP] = 0xf4
+        self.fl = 0
+        self.running = False
 
     def ram_read(self, address):
         return self.ram[address]
@@ -46,10 +52,6 @@ class CPU:
                 self.ram[address] = value
                 address += 1
 
-        # for instruction in program:
-        #     self.ram[address] = instruction
-        #     address += 1
-
     def alu(self, op, reg_a, reg_b):
         """ALU operations."""
 
@@ -57,6 +59,9 @@ class CPU:
             self.reg[reg_a] += self.reg[reg_b]
         elif op == MUL:
             self.reg[reg_a] *= self.reg[reg_b]
+        elif op == CMP:
+            if self.reg[reg_a] == self.reg[reg_b]:
+                self.fl = 1
         else:
             raise Exception("Unsupported ALU operation")
 
@@ -82,19 +87,23 @@ class CPU:
 
     def run(self):
         """Run the CPU."""
-        while True:
-            # Get instruction from memory
+        self.running = True
+        while self.running:
             Instruction_reg = self.ram_read(self.PC)
-            # Read from memory at specified address and store
             operand_a = self.ram_read(self.PC + 1)
-            # Read from memory at specified address and store
             operand_b = self.ram_read(self.PC + 2)
 
             if Instruction_reg == HLT:
                 print('EXIT')
+                self.running = False
                 break
             elif Instruction_reg == LDI:
                 self.reg[operand_a] = operand_b
+                self.PC += 3
+            elif Instruction_reg == CMP:
+                address_a = self.ram_read(self.PC + 1)
+                address_b = self.ram_read(self.PC + 2)
+                self.alu(CMP, address_a, address_b)
                 self.PC += 3
             elif Instruction_reg == ADD:
                 self.alu(ADD, operand_a, operand_b)
@@ -106,22 +115,31 @@ class CPU:
             elif Instruction_reg == MUL:
                 self.alu(MUL, operand_a, operand_b)
                 self.PC += 3
+            elif Instruction_reg == JMP:
+                register_address = self.ram_read(self.PC + 1)
+                self.PC = self.reg[register_address]
+            elif Instruction_reg == JEQ:
+                register_address = self.ram_read(self.PC + 1)
+                if self.fl == 1:
+                    self.PC = self.reg[register_address]
+                else:
+                    self.PC += 2
+            elif Instruction_reg == JNE:
+                register_address = self.ram_read(self.PC + 1)
+                if self.fl == 0:
+                    self.PC = self.reg[register_address]
+                else:
+                    self.PC += 2
             elif Instruction_reg == PUS:
-                # decrement the stack pointer
                 v = self.reg[operand_a]
                 self.reg[SP] -= 1
-                # Get the reg number we're pushing to
                 reg_key = self.ram[self.PC + 1]
-                # Grab the value out of that register
                 reg_value = self.reg[reg_key]
-                # Store that value at the current stack pointer
                 most_recent_stack_address = self.reg[SP]
                 self.ram[most_recent_stack_address] = reg_value
-                # Increment the PC
                 self.ram_write(v, self.reg[SP])
                 self.PC += 2
             elif Instruction_reg == POP:
-                # 1. Copy the value from the address pointed to by `SP` to the given register.
                 v = self.ram_read(self.reg[SP])
                 self.reg[SP] += 1
                 self.reg[operand_a] = v
